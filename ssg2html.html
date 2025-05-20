@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>SSG2HTML - The Juniper SSG policy rule to HTML file converter</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    textarea { width: 100%; height: 200px; font-family: monospace; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f4f4f4;
+      cursor: pointer;
+      position: relative;
+      user-select: none;
+    }
+    th:hover {
+      background-color: #eaeaea;
+    }
+    th.sorted-asc::after {
+      content: " 🔼";
+      position: absolute;
+      right: 8px;
+    }
+    th.sorted-desc::after {
+      content: " 🔽";
+      position: absolute;
+      right: 8px;
+    }
+    tr:hover {
+      background-color: #f9f9f9;
+    }
+    td { white-space: pre-line; }
+    .action-disabled { background-color: #d33; color: white; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<h1>SSG2HTML</h1>
+<h2>貼上或載入 Juniper SSG policy rule</h2>
+<input type="file" id="fileInput" accept=".txt">
+<br><br>
+
+<textarea id="configInput"></textarea><br>
+<button onclick="parseConfig()">開始解析</button>
+<button onclick="exportCSV()">匯出 CSV</button>
+
+<h2>解析結果</h2>
+<table id="resultTable">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>From</th>
+      <th>To</th>
+      <th>Source</th>
+      <th>Destination</th>
+      <th>Service</th>
+      <th>Action</th>
+      <th>Schedule</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+let policies = [];
+
+document.getElementById('fileInput').addEventListener('change', function (e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    document.getElementById('configInput').value = e.target.result;
+  };
+  reader.readAsText(file);
+});
+
+function parseConfig() {
+  const lines = document.getElementById("configInput").value.split("\n").map(l => l.trim());
+  policies = [];
+  let current = null;
+
+  for (let line of lines) {
+    if (line.startsWith("set policy id")) {
+      if (/^set policy id \d+$/.test(line)) continue;
+      line = line.replace(/name\s+"[^"]+"/, '');
+      const idMatch = line.match(/set policy id (\d+)/);
+      const id = idMatch ? idMatch[1] : '';
+
+      if (line.includes("disable")) {
+        if (current && current.id === id) {
+          current.disabled = true;
+        } else {
+          const existing = policies.find(p => p.id === id);
+          if (existing) {
+            existing.disabled = true;
+          } else {
+            policies.push({
+              id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: true
+            });
+          }
+        }
+        continue;
+      }
+
+      if (!current) {
+        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false };
+      } else if (current.id !== id) {
+        policies.push(current);
+        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false };
+      }
+
+      const quoteMatches = [...line.matchAll(/"([^"]+)"/g)].map(m => m[1]);
+      if (quoteMatches.length >= 5) {
+        current.from = quoteMatches[0];
+        current.to = quoteMatches[1];
+        if (!current.src.includes(quoteMatches[2])) current.src.push(quoteMatches[2]);
+        if (!current.dst.includes(quoteMatches[3])) current.dst.push(quoteMatches[3]);
+        if (!current.service.includes(quoteMatches[4])) current.service.push(quoteMatches[4]);
+      }
+
+      if (line.includes("permit")) current.action = "permit";
+      if (line.includes("deny")) current.action = "deny";
+      if (line.includes("schedule")) current.schedule = quoteMatches[5];
+    }
+
+    else if (line.startsWith("set src-address") && current) {
+      const match = line.match(/"([^"]+)"/);
+      if (match && !current.src.includes(match[1])) current.src.push(match[1]);
+    } else if (line.startsWith("set dst-address") && current) {
+      const match = line.match(/"([^"]+)"/);
+      if (match && !current.dst.includes(match[1])) current.dst.push(match[1]);
+    } else if (line.startsWith("set service") && current) {
+      const match = line.match(/"([^"]+)"/);
+      if (match && !current.service.includes(match[1])) current.service.push(match[1]);
+    }
+
+    else if ((line.includes("permit") || line.includes("deny")) && current) {
+      if (line.includes("permit")) current.action = "permit";
+      if (line.includes("deny")) current.action = "deny";
+      if (line.includes("schedule")) current.schedule = quoteMatches[5];
+    }
+
+    else if (line === "exit") {
+      if (current) policies.push(current);
+      current = null;
+    }
+  }
+
+  if (current) policies.push(current);
+
+  const tbody = document.querySelector("#resultTable tbody");
+  tbody.innerHTML = "";
+  for (let p of policies) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${p.id}</td>
+      <td>${p.from}</td>
+      <td>${p.to}</td>
+      <td>${p.src.join("<br/>")}</td>
+      <td>${p.dst.join("<br/>")}</td>
+      <td>${p.service.join("<br/>")}</td>
+      <td class="${p.disabled ? 'action-disabled' : ''}">${p.action}</td>
+      <td>${p.schedule}</td>
+    `;
+    tbody.appendChild(row);
+  }
+}
+
+function exportCSV() {
+  if (!policies.length) return alert("請先解析資料");
+
+  const header = ["ID", "From", "To", "Source", "Destination", "Service", "Action", "Schedule"];
+  const rows = [header];
+
+  for (let p of policies) {
+    rows.push([
+      p.id,
+      p.from,
+      p.to,
+      p.src.join("\n"),
+      p.dst.join("\n"),
+      p.service.join("\n"),
+      p.action,
+      p.schedule
+    ]);
+  }
+
+  const csvContent = "\uFEFF" + rows.map(row =>
+    row.map(field => `"${field.replace(/"/g, '""')}"`).join(",")
+  ).join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "policies.csv";
+  link.click();
+}
+
+// 🆕 表格欄位排序功能
+document.addEventListener('click', function (e) {
+  if (e.target.tagName !== 'TH') return;
+
+  const th = e.target;
+  const table = th.closest('table');
+  const tbody = table.querySelector('tbody');
+  const index = Array.from(th.parentNode.children).indexOf(th);
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+
+  const isAsc = th.classList.contains('sorted-asc');
+
+  // 清除所有欄位的排序 class
+  table.querySelectorAll('th').forEach(th => th.classList.remove('sorted-asc', 'sorted-desc'));
+
+  th.classList.add(isAsc ? 'sorted-desc' : 'sorted-asc');
+  const direction = isAsc ? -1 : 1;
+
+  rows.sort((a, b) => {
+    const cellA = a.children[index].innerText.trim().toLowerCase();
+    const cellB = b.children[index].innerText.trim().toLowerCase();
+    const numA = parseFloat(cellA);
+    const numB = parseFloat(cellB);
+
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return (numA - numB) * direction;
+    } else {
+      return cellA.localeCompare(cellB) * direction;
+    }
+  });
+
+  rows.forEach(row => tbody.appendChild(row));
+});
+</script>
+
+</body>
+</html>
