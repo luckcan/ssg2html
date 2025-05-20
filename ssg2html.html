@@ -108,7 +108,7 @@ function parseConfig() {
             existing.disabled = true;
           } else {
             policies.push({
-              id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: true
+              id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: true, index: policies.length
             });
           }
         }
@@ -116,10 +116,10 @@ function parseConfig() {
       }
 
       if (!current) {
-        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false };
+        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false, index: policies.length };
       } else if (current.id !== id) {
         policies.push(current);
-        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false };
+        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false, index: policies.length };
       }
 
       const quoteMatches = [...line.matchAll(/"([^"]+)"/g)].map(m => m[1]);
@@ -160,6 +160,17 @@ function parseConfig() {
   }
 
   if (current) policies.push(current);
+
+  // Sort policies by From, To, then ID
+  policies.sort((a, b) => {
+    const fromCmp = a.from.localeCompare(b.from);
+    if (fromCmp !== 0) return fromCmp;
+
+    const toCmp = a.to.localeCompare(b.to);
+    if (toCmp !== 0) return toCmp;
+
+    return a.index - b.index; // ✅ 保留讀取順序
+  });
 
   const tbody = document.querySelector("#resultTable tbody");
   tbody.innerHTML = "";
