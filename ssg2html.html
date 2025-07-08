@@ -69,6 +69,7 @@
       <th>Service</th>
       <th>Action</th>
       <th>Schedule</th>
+      <th>Name</th>
     </tr>
   </thead>
   <tbody></tbody>
@@ -95,7 +96,8 @@ function parseConfig() {
   for (let line of lines) {
     if (line.startsWith("set policy id")) {
       if (/^set policy id \d+$/.test(line)) continue;
-      line = line.replace(/name\s+"[^"]+"/, '');
+      const nameMatch = line.match(/name\s+"([^"]+)"/);
+      const name = nameMatch ? nameMatch[1] : '';
       const idMatch = line.match(/set policy id (\d+)/);
       const id = idMatch ? idMatch[1] : '';
 
@@ -108,7 +110,7 @@ function parseConfig() {
             existing.disabled = true;
           } else {
             policies.push({
-              id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: true, index: policies.length
+              id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', name: '', disabled: true, index: policies.length
             });
           }
         }
@@ -116,26 +118,40 @@ function parseConfig() {
       }
 
       if (!current) {
-        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false, index: policies.length };
+        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', name: '', disabled: false, index: policies.length };
       } else if (current.id !== id) {
         policies.push(current);
-        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', disabled: false, index: policies.length };
+        current = { id, from: '', to: '', src: [], dst: [], service: [], action: '', schedule:'', name: '', disabled: false, index: policies.length };
       }
 
       const quoteMatches = [...line.matchAll(/"([^"]+)"/g)].map(m => m[1]);
-      if (quoteMatches.length >= 5) {
-        current.from = quoteMatches[0];
-        current.to = quoteMatches[1];
-        if (!current.src.includes(quoteMatches[2])) current.src.push(quoteMatches[2]);
-        if (!current.dst.includes(quoteMatches[3])) current.dst.push(quoteMatches[3]);
-        if (!current.service.includes(quoteMatches[4])) current.service.push(quoteMatches[4]);
+      if (line.includes("name")) {
+        current.name = quoteMatches[0];
+        if (quoteMatches.length >= 5) {
+            current.from = quoteMatches[1];
+            current.to = quoteMatches[2];
+            if (!current.src.includes(quoteMatches[3])) current.src.push(quoteMatches[3]);
+            if (!current.dst.includes(quoteMatches[4])) current.dst.push(quoteMatches[4]);
+            if (!current.service.includes(quoteMatches[5])) current.service.push(quoteMatches[5]);
+        }
+
+        if (line.includes("permit")) current.action = "permit";
+        if (line.includes("deny")) current.action = "deny";
+        if (line.includes("schedule")) current.schedule = quoteMatches[6];
+      } else {
+        if (quoteMatches.length >= 5) {
+            current.from = quoteMatches[0];
+            current.to = quoteMatches[1];
+            if (!current.src.includes(quoteMatches[2])) current.src.push(quoteMatches[2]);
+            if (!current.dst.includes(quoteMatches[3])) current.dst.push(quoteMatches[3]);
+            if (!current.service.includes(quoteMatches[4])) current.service.push(quoteMatches[4]);
+        }
+
+        if (line.includes("permit")) current.action = "permit";
+        if (line.includes("deny")) current.action = "deny";
+        if (line.includes("schedule")) current.schedule = quoteMatches[5];
       }
-
-      if (line.includes("permit")) current.action = "permit";
-      if (line.includes("deny")) current.action = "deny";
-      if (line.includes("schedule")) current.schedule = quoteMatches[5];
     }
-
     else if (line.startsWith("set src-address") && current) {
       const match = line.match(/"([^"]+)"/);
       if (match && !current.src.includes(match[1])) current.src.push(match[1]);
@@ -150,7 +166,7 @@ function parseConfig() {
     else if ((line.includes("permit") || line.includes("deny")) && current) {
       if (line.includes("permit")) current.action = "permit";
       if (line.includes("deny")) current.action = "deny";
-      if (line.includes("schedule")) current.schedule = quoteMatches[5];
+      if (line.includes("schedule")) current.schedule = quoteMatches[6];
     }
 
     else if (line === "exit") {
@@ -185,6 +201,7 @@ function parseConfig() {
       <td>${p.service.join("<br/>")}</td>
       <td class="${p.disabled ? 'action-disabled' : ''}">${p.action}</td>
       <td>${p.schedule}</td>
+      <td>${p.name}</td>
     `;
     tbody.appendChild(row);
   }
@@ -193,7 +210,7 @@ function parseConfig() {
 function exportCSV() {
   if (!policies.length) return alert("請先解析資料");
 
-  const header = ["ID", "From", "To", "Source", "Destination", "Service", "Action", "Schedule"];
+  const header = ["ID", "From", "To", "Source", "Destination", "Service", "Action", "Schedule", "Name"];
   const rows = [header];
 
   for (let p of policies) {
@@ -205,7 +222,8 @@ function exportCSV() {
       p.dst.join("\n"),
       p.service.join("\n"),
       p.action,
-      p.schedule
+      p.schedule,
+      p.name
     ]);
   }
 
