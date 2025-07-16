@@ -43,7 +43,6 @@
       background-color: #f9f9f9;
     }
     td { white-space: pre-line; }
-    .action-disabled { background-color: #d33; color: white; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -61,15 +60,16 @@
 <table id="resultTable">
   <thead>
     <tr>
-      <th>ID</th>
       <th>From</th>
       <th>To</th>
+      <th>ID</th>
       <th>Source</th>
       <th>Destination</th>
       <th>Service</th>
       <th>Action</th>
+      <th>Status</th>
       <th>Schedule</th>
-      <th>Name</th>
+      <th>Comment</th>
     </tr>
   </thead>
   <tbody></tbody>
@@ -192,14 +192,17 @@ function parseConfig() {
   tbody.innerHTML = "";
   for (let p of policies) {
     const row = document.createElement("tr");
+
+    if (p.disabled) row.style.backgroundColor = "#fdd"; // light red
     row.innerHTML = `
-      <td>${p.id}</td>
       <td>${p.from}</td>
       <td>${p.to}</td>
+      <td>${p.id}</td>
       <td>${p.src.join("<br/>")}</td>
       <td>${p.dst.join("<br/>")}</td>
       <td>${p.service.join("<br/>")}</td>
-      <td class="${p.disabled ? 'action-disabled' : ''}">${p.action}</td>
+      <td>${p.action}</td>
+      <td>${p.disabled ? 'No' : 'Yes'}</td>
       <td>${p.schedule}</td>
       <td>${p.name}</td>
     `;
@@ -210,18 +213,19 @@ function parseConfig() {
 function exportCSV() {
   if (!policies.length) return alert("請先解析資料");
 
-  const header = ["ID", "From", "To", "Source", "Destination", "Service", "Action", "Schedule", "Name"];
+  const header = ["From", "To", "ID", "Source", "Destination", "Service", "Action", "Status", "Schedule", "Comment"];
   const rows = [header];
 
   for (let p of policies) {
     rows.push([
-      p.id,
       p.from,
       p.to,
+      p.id,
       p.src.join("\n"),
       p.dst.join("\n"),
       p.service.join("\n"),
       p.action,
+      p.disabled ? 'No' : 'Yes',
       p.schedule,
       p.name
     ]);
